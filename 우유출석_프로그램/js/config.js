@@ -27,7 +27,7 @@ const DEFAULT_CONFIG = {
      ⚠️ ☰ 메뉴의 '프로젝트를 파일로 다운로드'(.tm 파일)는
         여기에 쓸 수 없습니다. 그건 티처블 머신에서 다시
         편집할 때만 쓰는 파일입니다.                           */
-  modelURL: '',
+  modelURL: 'model/',
 
   /* ---------- 정답으로 인정하는 기준 ----------
      confidenceMin : 1위 확률이 이 값보다 높아야 통과 (0~1)
@@ -58,14 +58,9 @@ const DEFAULT_CONFIG = {
      ※ 티처블 머신 클래스 이름을 그냥 학생 이름으로 만들었다면
        name 과 label 을 똑같이 적으면 됩니다.                  */
   roster: [
-    { name: '김하준', label: '김하준', emoji: '🐰' },
-    { name: '이서아', label: '이서아', emoji: '🐱' },
-    { name: '박도윤', label: '박도윤', emoji: '🐶' },
-    { name: '최지우', label: '최지우', emoji: '🐸' },
-    { name: '정은우', label: '정은우', emoji: '🐥' },
-    { name: '강시우', label: '강시우', emoji: '🐼' },
-    { name: '윤수아', label: '윤수아', emoji: '🦊' },
-    { name: '임채원', label: '임채원', emoji: '🐨' },
+    { name: 'Sia',   label: 'Sia',   emoji: '🐰' },
+    { name: 'Minha', label: 'Minha', emoji: '🐱' },
+    { name: 'Jaha',  label: 'Jaha',  emoji: '🐶' },
   ],
 };
 
