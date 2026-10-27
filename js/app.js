@@ -19,6 +19,11 @@ let stream = null;            // 카메라 영상
 let current = null;           // 지금 사진 찍는 학생
 let busy = false;             // 판별 중 중복 클릭 막기
 let lastOk = false;           // 마지막 결과가 성공이었는지
+let camList = [];             // 이 기기에서 쓸 수 있는 카메라 목록
+let camIndex = 0;             // 그중 지금 쓰고 있는 것
+
+/* 고른 카메라는 이 기기에만 저장해 둡니다 (다음에 켤 때 그대로 쓰려고) */
+const CAM_KEY = 'milk-camera-v1';
 
 /* ---------- 자주 쓰는 짧은 함수 ---------- */
 const $ = (id) => document.getElementById(id);
@@ -103,20 +108,128 @@ async function startCamera(student) {
   $('camHint').textContent = '';
   show('screen-camera');
 
-  try {
-    stream = await navigator.mediaDevices.getUserMedia({
-      video: {
-        facingMode: 'environment',   // 뒷면 카메라 우선 (우유갑 찍기 편하게)
-        width: { ideal: 1280 },
-        height: { ideal: 960 },
-      },
-      audio: false,
-    });
-    $('video').srcObject = stream;
-  } catch (e) {
-    console.error(e);
+  // 지난번에 고른 카메라가 있으면 그걸로, 없으면 뒷면 카메라로 켭니다.
+  const pref = loadCamPref();
+  let ok = await openStream(pref);
+
+  // 저장해 둔 카메라가 사라졌거나(USB 뽑음 등) 쓸 수 없으면 기본값으로 다시
+  if (!ok && pref.deviceId) {
+    saveCamPref({});
+    ok = await openStream({});
+  }
+
+  if (!ok) {
     $('camHint').innerHTML =
       '카메라를 켤 수 없어요.<br>브라우저에서 카메라 사용을 <b>허용</b>해 주세요.';
+    $('btnCamSwitch').classList.add('hidden');
+    return;
+  }
+
+  await refreshCamList();
+}
+
+/* 실제로 카메라를 켜는 부분. 성공하면 true */
+async function openStream(pref) {
+  const video = { width: { ideal: 1280 }, height: { ideal: 960 } };
+
+  if (pref && pref.deviceId) {
+    video.deviceId = { exact: pref.deviceId };   // 고른 카메라가 있으면 그것만
+  } else {
+    video.facingMode = 'environment';            // 뒷면 카메라 우선 (우유갑 찍기 편하게)
+  }
+
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ video, audio: false });
+    $('video').srcObject = stream;
+    return true;
+  } catch (e) {
+    console.error(e);
+    stream = null;
+    return false;
+  }
+}
+
+/* 이 기기에 카메라가 몇 개 있는지 살펴보고, 2개 이상이면 바꾸기 단추를 보여줍니다.
+   (카메라 이름표는 사용을 허용한 뒤에야 보이기 때문에 켠 다음에 확인합니다) */
+async function refreshCamList() {
+  try {
+    const all = await navigator.mediaDevices.enumerateDevices();
+    camList = all.filter((d) => d.kind === 'videoinput');
+  } catch (e) {
+    console.error(e);
+    camList = [];
+  }
+
+  const nowId = currentCamId();
+  const found = camList.findIndex((d) => d.deviceId === nowId);
+  camIndex = found >= 0 ? found : 0;
+
+  const btn = $('btnCamSwitch');
+  if (camList.length > 1) {
+    btn.classList.remove('hidden');
+    $('camSwitchLabel').textContent = camName(camList[camIndex], camIndex);
+  } else {
+    btn.classList.add('hidden');
+  }
+}
+
+/* 지금 켜져 있는 카메라의 id */
+function currentCamId() {
+  const track = stream && stream.getVideoTracks()[0];
+  if (!track || !track.getSettings) return '';
+  return track.getSettings().deviceId || '';
+}
+
+/* 카메라 이름을 아이들이 알아보게 바꿔줍니다 */
+function camName(dev, i) {
+  const label = (dev && dev.label) || '';
+  if (/front|user|facing front|전면/i.test(label)) return '앞 카메라';
+  if (/back|rear|environment|후면/i.test(label)) return '뒤 카메라';
+  if (label) return label.length > 14 ? label.slice(0, 14) + '…' : label;
+  return '카메라 ' + (i + 1);
+}
+
+/* 다음 카메라로 바꾸기 (앞 <-> 뒤, 웹캠이 여러 개면 차례로) */
+async function switchCamera() {
+  if (camList.length < 2) return;
+
+  const btn = $('btnCamSwitch');
+  btn.disabled = true;
+  $('camHint').textContent = '';
+
+  const before = camIndex;
+  camIndex = (camIndex + 1) % camList.length;
+  const dev = camList[camIndex];
+
+  stopCamera();
+  const ok = await openStream({ deviceId: dev.deviceId });
+
+  if (ok) {
+    saveCamPref({ deviceId: dev.deviceId });
+    $('camSwitchLabel').textContent = camName(dev, camIndex);
+  } else {
+    // 안 되면 원래 쓰던 카메라로 되돌립니다
+    camIndex = before;
+    await openStream(loadCamPref());
+    $('camHint').textContent = '그 카메라는 지금 쓸 수 없어요. 다시 눌러 보세요.';
+  }
+
+  btn.disabled = false;
+}
+
+/* 고른 카메라 기억하기 — 이 기기 안에만 저장됩니다 */
+function loadCamPref() {
+  try {
+    return JSON.parse(localStorage.getItem(CAM_KEY)) || {};
+  } catch (e) {
+    return {};
+  }
+}
+function saveCamPref(pref) {
+  try {
+    localStorage.setItem(CAM_KEY, JSON.stringify(pref));
+  } catch (e) {
+    /* 저장이 안 돼도 쓰는 데는 문제없습니다 */
   }
 }
 
@@ -578,6 +691,7 @@ function bindEvents() {
   $('btnTeacher').onclick = openTeacher;
 
   $('btnShoot').onclick = shoot;
+  $('btnCamSwitch').onclick = switchCamera;
   $('btnBackHome').onclick = () => { stopCamera(); renderRoster(); show('screen-home'); };
 
   $('btnRetry').onclick = () => startCamera(current);
